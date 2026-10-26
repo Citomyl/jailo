@@ -90,6 +90,7 @@ int main(int argc, char *argv[]) {
 	if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == -1) {
 		printf("Failed to set terminal mode.\n");
 		free(buf);
+		
 		return 1;
 	}
 	free(buf);
