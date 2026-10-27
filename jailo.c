@@ -7,92 +7,147 @@ struct termios original;
 struct termios raw;
 
 int main(int argc, char *argv[]) {
-	if (tcgetattr(STDIN_FILENO, &original) == -1) {
-		printf("Couldn't read terminal settings.\n");
-		return 1;
-	}
-	raw = original;
-	raw.c_lflag &= ~(ICANON | ECHO);
+    if (tcgetattr(STDIN_FILENO, &original) == -1) {
+        printf("Couldn't read terminal settings.\n");
+        return 1;
+    }
+    raw = original;
+    raw.c_lflag &= ~(ICANON | ECHO);
 
-	if (argc == 1) {
-		printf("Please select a file.\n");
-		return 1;
-	} else if (argc > 2) {
-		printf("Too many parameters.\n");
-		return 1;
-	} 
+    if (argc == 1) {
+        printf("Please select a file.\n");
+        return 1;
+    } else if (argc > 2) {
+        printf("Too many parameters.\n");
+        return 1;
+    } 
 
-	FILE *file;
+    FILE *file;
 
-	if(access(argv[1], F_OK) == 0) {
-		file = fopen(argv[1], "r+b");
-		if (file == NULL) {
-			printf("Couldn't open the file.\n");
-			return 1;
-		}
-	} else {
-		file = fopen(argv[1], "w+b");
-		if (file == NULL) {
-			printf("Failed to create a file.\n");
-			return 1;
-		}
-	}
-	
-	size_t bufCapacity = 32;
-	unsigned char *buf = malloc(bufCapacity);
-	if (buf == NULL) {
-		printf("Out of memory.\n");
-		return 1;
-	}
+    if(access(argv[1], F_OK) == 0) {
+        file = fopen(argv[1], "r+b");
+        if (file == NULL) {
+            printf("Couldn't open the file.\n");
+            return 1;
+        }
+    } else {
+        file = fopen(argv[1], "w+b");
+        if (file == NULL) {
+            printf("Failed to create a file.\n");
+            return 1;
+        }
+    }
+    
+    size_t bufCapacity = 32;
+    unsigned char *buf = malloc(bufCapacity);
+    if (buf == NULL) {
+        printf("Out of memory.\n");
+        return 1;
+    }
 
-	size_t bufLength = 0;
-	int charTemp;
-	while ((charTemp = fgetc(file)) != EOF) {
-		if (bufLength >= bufCapacity) {
-			bufCapacity *= 2;
-			unsigned char *bufTemp = (unsigned char *)realloc(buf, bufCapacity);
+    size_t bufLength = 0;
+    int charTemp;
+    while ((charTemp = fgetc(file)) != EOF) {
+        if (bufLength >= bufCapacity) {
+            bufCapacity *= 2;
+            unsigned char *bufTemp = (unsigned char *)realloc(buf, bufCapacity);
 
-			if(bufTemp != NULL) {
-				buf = bufTemp;
-			} else {
-				printf("Out of memory.\n");
-				free(buf);
-				fclose(file);
-				return 1;
-			}
-		}
+            if(bufTemp != NULL) {
+                buf = bufTemp;
+            } else {
+                printf("Out of memory.\n");
+                free(buf);
+                fclose(file);
+                return 1;
+            }
+        }
 
-		buf[bufLength] = (unsigned char)charTemp;
-		bufLength++;
-	}
-	fclose(file);
+        buf[bufLength] = (unsigned char)charTemp;
+        bufLength++;
+    }
+    fclose(file);
 
-	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
-		printf("Failed to set terminal mode.\n");
-		free(buf);
-		return 1;
-	}
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+        printf("Failed to set terminal mode.\n");
+        free(buf);
+        return 1;
+    }
 
-	printf("\033[2J");
+    printf("\033[2J");
+    printf("\033[1;1H");
 
-	for (int i = 0; i < bufLength; i++) {
-		printf("%c", buf[i]);
-	}
-	while (1) {
-		int input1 = getchar();
-		int input2;
-		if (input1 > 191) {
-			input2 = getchar();
-		}
+    int cursorLine = 1;
+    int cursorColumn = 1;
+    size_t currentByte = 0;
+
+    for (int i = 0; i < bufLength; i++) {
+        if (buf[i] == 0x0A) {
+            cursorLine++;
+            cursorColumn = 1;
+        }
+
+        if (buf[i] > 192) {
+            currentByte += 2;
+            printf("%c", buf[i]);
+            i++;
+        } else {
+            currentByte += 1;
+        }
+
+        printf("%c", buf[i]);
+        cursorColumn++;
+    }
+
+    while (1) {
+        int input1 = getchar();
+        int input2;
+        int byteCounter = 1;
+        if (input1 > 191) {
+            input2 = getchar();
+            byteCounter = 2;
+        }
+        
+        if (bufLength + byteCounter > bufCapacity) {
+            bufCapacity *= 2;
+            unsigned char *bufTemp = (unsigned char *)realloc(buf, bufCapacity);
+
+            if(bufTemp != NULL) {
+                buf = bufTemp;
+            } else {
+                printf("Out of memory.\n");
+                if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == -1) {
+                    printf("Failed to set terminal mode.\n");
+                }
+                free(buf);
+                fclose(file);
+                return 1;
+            }
+        }
+
+        bufLength++;
+		currentByte++;
+        buf[bufLength] = input1;
+		printf("%c", input1);
 		
-	}
+        if (byteCounter > 1) {
+            bufLength++;
+			currentByte++;
+            buf[bufLength] = input2;
+			printf("%c", input2);
+        }
 
-	if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == -1) {
-		printf("Failed to set terminal mode.\n");
-		free(buf);
-		
-		return 1;
-	}
-	free(buf);
-	return 0;
+		printf("\nStart Buff\n");
+		for(int i = 0; i < bufLength; i++) {
+			printf("%c", buf[i]);
+		}   
+		printf("\nEnd Buff\n");   
+    }
+
+    if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &original) == -1) {
+        printf("Failed to set terminal mode.\n");
+        free(buf);
+        return 1;
+    }
+    free(buf);
+    return 0;
 }
